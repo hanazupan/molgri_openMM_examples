@@ -24,17 +24,14 @@ from openmm.unit import kilojoule, mole, nanometer
 def two_atom_Coulomb_calculation(charge1_no_unit: int, charge2_no_unit: int, r_in_A: ArrayLike,
                                  dielectric_constant: float = 1):
     """
-
-
-    Returns:
-
+    Calculate electrostatic potential between two point particles for an array of different distances r.
     """
     # gives same results as Mia's code
     r_in_m = 1e-10 * r_in_A
     # charges of Cl- and Ca2+
     q1 = charge1_no_unit * elementary_charge  # C
     q2 = charge2_no_unit * elementary_charge  # C
-    vacuum_permittivity = epsilon_0 # F m^-1
+    vacuum_permittivity = epsilon_0  # F m^-1
 
     potential_in_J = q1*q2/(4*np.pi*vacuum_permittivity*dielectric_constant*r_in_m)
     potential_in_kJ_per_mole = potential_in_J * N_A / 1000
@@ -115,10 +112,32 @@ def point_openmm_calculations_on_pt(molgri_file_name: str, topology_file_path: s
 #                                  Plotting tools
 #####################################################################################################################
 
-def plot_energy_on_ax(ax, r_in_A: ArrayLike, which=None):
-    if which is None:
-        which = ["LJ_calculated", "Coulumb_calculated_vacuum", "Coulumb_calculated_implicit"]
-    pass
+
+def plot_energies(df, output_name="Ca_Cl_potentials"):
+    sns.set_theme(context="talk", style="white")
+    fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+
+    # LJ plot
+    sns.lineplot(x=df["distance [A]"], y=df["LJ energy [kJ/mol]"], label="Calculated LJ", ax=ax)
+    # the combined sigma should be the distance at which the LJ potential reaches zero
+    ax.vlines(sigma_combined, *ax.get_ylim(), colors="gray", linestyles="--", label=r"$\sigma$")
+    # - epsilon is the depth of the potential at minimum
+    ax.hlines(-epsilon_combined, *ax.get_xlim(), colors="black", linestyles="--", label=r"$\epsilon$")
+
+    # Coulomb plot
+    sns.lineplot(x=df["distance [A]"], y=df["LJ energy [kJ/mol]"], label="Calculated LJ", ax=ax)
+    sns.lineplot(x=df["distance [A]"], y=df["Coulomb energy (vacuum) [kJ/mol]"], label="Calculated Coulomb (vacuum)",
+                 ax=ax)
+    sns.lineplot(x=df["distance [A]"], y=df["Coulomb energy (implicit water) [kJ/mol]"],
+                 label="Calculated Coulomb (implicit water)", ax=ax)
+    # openMM plot
+    sns.scatterplot(x=df["distance [A]"], y=df["openMM energy [kJ/mol]"],
+                 label="Full openMM energy (vacuum)", ax=ax, size=1, color="black")
+    ax.set_ylabel("Coulomb energy [kJ/mol]")
+    ax.set_yscale("symlog")
+    plt.tight_layout()
+    plt.savefig(f"output/figures/{output_name}")
+
 
 if __name__ == "__main__":
     # example: Ca(2+) and Cl(-)
@@ -141,51 +160,37 @@ if __name__ == "__main__":
                                                                      sigma1_in_A=ca_sigma_in_A,
                                                                      sigma2_in_A=cl_sigma_in_A)
 
+
+    def all_calculations_for_one_set_of_rs(rs_in_A) -> pd.DataFrame:
+        """
+        To easily compare methods, calculate all of them for a particular set of distances. Relies on parameters
+        defined above.
+        """
+        calculated_LJ_energies_in_kJ_per_mole = two_atom_LJ_calculation(rs_in_A, epsilon_combined, sigma_combined)
+        vacuum_Coulomb_energies_in_kJ_per_mole = two_atom_Coulomb_calculation(ca_charge_no_unit, cl_charge_no_unit,
+                                                                              rs_in_A)
+        water_Coulomb_energies_in_kJ_per_mole = two_atom_Coulomb_calculation(ca_charge_no_unit, cl_charge_no_unit,
+                                                                             rs_in_A, 80.2)
+
+        # molgri + openmm calculations
+        my_molgri_name = create_molgri_file(ca_file, cl_file, rs_in_A)
+        openmm_distances_in_A, openmm_energies_in_kJ_per_mole = point_openmm_calculations_on_pt(my_molgri_name,
+                                                                                                topology_file)
+
+        # organising data in a DF
+        data = np.array([rs_in_A,
+                         calculated_LJ_energies_in_kJ_per_mole,
+                         vacuum_Coulomb_energies_in_kJ_per_mole,
+                         water_Coulomb_energies_in_kJ_per_mole,
+                         openmm_energies_in_kJ_per_mole]).T
+        df = pd.DataFrame(data, columns=["distance [A]", "LJ energy [kJ/mol]", "Coulomb energy (vacuum) [kJ/mol]",
+                                         "Coulomb energy (implicit water) [kJ/mol]", "openMM energy [kJ/mol]"])
+        return df
+
     interesting_LJ_distances_in_A = np.linspace(0.9*sigma_combined, 2.5*sigma_combined, 100)
-    calculated_LJ_energies_in_kJ_per_mole = two_atom_LJ_calculation(interesting_LJ_distances_in_A, epsilon_combined,
-                                                                    sigma_combined)
-    vacuum_Coulomb_energies_in_kJ_per_mole = two_atom_Coulomb_calculation(ca_charge_no_unit, cl_charge_no_unit,
-                                                                          interesting_LJ_distances_in_A)
-    water_Coulomb_energies_in_kJ_per_mole = two_atom_Coulomb_calculation(ca_charge_no_unit, cl_charge_no_unit,
-                                                                         interesting_LJ_distances_in_A, 80.2)
+    my_df = all_calculations_for_one_set_of_rs(interesting_LJ_distances_in_A)
+    plot_energies(my_df, output_name="subset_distances")
 
-    # molgri + openmm calculations
-    my_molgri_name = create_molgri_file(ca_file, cl_file, interesting_LJ_distances_in_A)
-    openmm_distances_in_A, openmm_energies_in_kJ_per_mole = point_openmm_calculations_on_pt(my_molgri_name,
-                                                                                            topology_file)
-
-    # organising data in a DF
-    data = np.array([interesting_LJ_distances_in_A,
-                     calculated_LJ_energies_in_kJ_per_mole,
-                     vacuum_Coulomb_energies_in_kJ_per_mole,
-                     water_Coulomb_energies_in_kJ_per_mole]).T
-    data_openMM = np.array([openmm_distances_in_A, openmm_energies_in_kJ_per_mole]).T
-    df = pd.DataFrame(data, columns=["distance [A]", "LJ energy [kJ/mol]", "Coulomb energy (vacuum) [kJ/mol]",
-                                     "Coulomb energy (implicit water) [kJ/mol]"])
-    df_openMM = pd.DataFrame(data_openMM, columns=["distance [A]", "openMM energy [kJ/mol]"])
-
-
-    # plotting
-    sns.set_theme(context="talk", style="white")
-    fig, ax = plt.subplots(1, 2, figsize=(20, 10))
-
-    # LJ plot
-    sns.lineplot(x=df["distance [A]"], y=df["LJ energy [kJ/mol]"], label="Calculated LJ", ax=ax[0])
-    # the combined sigma should be the distance at which the LJ potential reaches zero
-    ax[0].vlines(sigma_combined, *ax[0].get_ylim(), colors="gray", linestyles="--", label=r"$\sigma$")
-    # - epsilon is the depth of the potential at minimum
-    ax[0].hlines(-epsilon_combined, *ax[0].get_xlim(), colors="black", linestyles="--", label=r"$\epsilon$")
-    ax[0].legend()
-    # Coulomb plot
-    sns.lineplot(x=df["distance [A]"], y=df["Coulomb energy (vacuum) [kJ/mol]"], label="Calculated Coulomb (vacuum)",
-                 ax=ax[1])
-    sns.lineplot(x=df["distance [A]"], y=df["Coulomb energy (implicit water) [kJ/mol]"],
-                 label="Calculated Coulomb (implicit water)", ax=ax[1])
-    sns.scatterplot(x=df_openMM["distance [A]"], y=df_openMM["openMM energy [kJ/mol]"],
-                 label="Full openMM energy (vacuum)", ax=ax[1], size=1, color="black")
-    ax[1].set_ylabel("Coulomb energy [kJ/mol]")
-    ax[1].set_yscale("symlog")
-    ax[1].legend()
-    plt.tight_layout()
-    plt.savefig("output/figures/Ca_Cl_potential")
-    #plt.show()
+    all_distances_in_A = np.linspace(0.1, 10, 1000)
+    my_df = all_calculations_for_one_set_of_rs(all_distances_in_A)
+    plot_energies(my_df, output_name="many_distances")
