@@ -1,0 +1,36 @@
+;
+;	File 'topol.top' was generated
+;	By user: heif89 (372023)
+;	On host: qcw32
+;	At date: Thu Aug 26 15:50:21 2021
+;
+;	This is a standalone topology file
+;
+;	Created by:
+;	                     :-) GROMACS - gmx pdb2gmx, 2020 (-:
+;	
+;	Executable:   /home/janjoswig/local/gromacs-2020/bin/gmx20
+;	Data prefix:  /home/janjoswig/local/gromacs-2020
+;	Working dir:  /home/heif89/Data/PseudoPaper/hff03_Problem_3/TypeC/Initial
+;	Command line:
+;	  gmx20 pdb2gmx -f TypeC.pdb -o protein.gro -ignh -renum yes -water tip3p
+;	Force field was read from the standard GROMACS share directory.
+
+
+; Include forcefield parameters
+#include "amber99sb-ildn.ff/forcefield.itp"
+
+; Include topology for ions
+#include "amber99sb-ildn.ff/ions.itp"
+
+
+
+[ system ]
+; Name
+ions
+
+[ molecules ]
+; Compound        #mols
+CA               1
+CL               1
+
